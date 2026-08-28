@@ -1,0 +1,77 @@
+@startuml
+title Avito.Кухни — схема базы данных
+
+hide methods
+hide stereotypes
+
+entity "Заведения\n(establishments)" as establishments {
+  * id : uuid <<ПК>>
+  --
+  name : text — название
+  kind : text — вид заведения
+  description : text — описание
+  is_active : boolean — активно
+  created_at : timestamptz — создано
+  updated_at : timestamptz — изменено
+}
+
+entity "Интеграции заведений\n(establishment_integrations)" as establishment_integrations {
+  * establishment_id : uuid <<ПК, ВК>>
+  --
+  external_id : text <<УНИК>> — внешний идентификатор
+  api_key_hash : bytea <<УНИК>> — хеш ключа
+  is_active : boolean — активно
+  created_at : timestamptz — создано
+  updated_at : timestamptz — изменено
+}
+
+entity "Позиции меню\n(menu_items)" as menu_items {
+  * id : uuid <<ПК>>
+  --
+  establishment_id : uuid <<ВК>> — заведение
+  external_id : text — внешний идентификатор
+  name : text — название
+  description : text — описание
+  price_minor : bigint — цена в копейках
+  currency : char(3) — валюта
+  is_active : boolean — активно
+  is_available : boolean — доступно
+  created_at : timestamptz — создано
+  updated_at : timestamptz — изменено
+}
+
+entity "Заказы\n(orders)" as orders {
+  * id : uuid <<ПК>>
+  --
+  establishment_id : uuid <<ВК>> — заведение
+  user_id : text — пользователь платформы
+  delivery_address : text — адрес
+  external_order_id : text? — внешний идентификатор
+  status : text — состояние
+  rejection_reason : text? — причина отклонения
+  total_price_minor : bigint — сумма в копейках
+  currency : char(3) — валюта
+  idempotency_key : text — ключ идемпотентности
+  request_hash : bytea — хеш запроса
+  created_at : timestamptz — создано
+  updated_at : timestamptz — изменено
+}
+
+entity "Позиции заказа\n(order_items)" as order_items {
+  * order_id : uuid <<ПК, ВК>> — заказ
+  * line_no : smallint <<ПК>> — номер строки
+  --
+  menu_item_id : uuid <<ВК>> — позиция меню
+  external_item_id : text — внешний идентификатор
+  name : text — снимок названия
+  unit_price_minor : bigint — снимок цены
+  quantity : smallint — количество
+  line_total_minor : bigint — сумма строки
+}
+
+establishments ||--|| establishment_integrations
+establishments ||--o{ menu_items
+establishments ||--o{ orders
+orders ||--|{ order_items
+menu_items ||--o{ order_items
+@enduml

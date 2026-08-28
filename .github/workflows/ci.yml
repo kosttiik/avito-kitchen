@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.0"
+          cache: true
+      - run: make fmt-check tidy-check generate-check test test-race vet openapi-check diagrams-check compose-check
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.13.1
+      - run: make test-integration
+      - run: make test-e2e
+      - if: always()
+        run: docker compose logs --no-color

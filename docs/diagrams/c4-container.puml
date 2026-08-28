@@ -1,0 +1,34 @@
+@startuml
+title Avito.Кухни — контейнерная диаграмма C4, уровень 2
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam rectangle {
+  BackgroundColor #F5F7FA
+  BorderColor #34495E
+}
+
+actor "Пользователь Avito.Кухни" as User
+actor "Оператор заведения" as Operator
+
+rectangle "Система Avito.Кухни" {
+  component "API Avito.Кухни\n[Контейнер: Go / net/http]\nПользовательские и интеграционные сценарии,\nправила заказов и их жизненный цикл" as Kitchen
+  database "PostgreSQL\n[Контейнер: PostgreSQL 18]\nЗаведения, проекция меню,\nзаказы и неизменяемые снимки" as DB
+}
+
+component "Веб-клиент\n[Внешняя система, не реализован]" as Web
+component "Сервис примера заведения\n[Контейнер: Go / net/http]\nСобственное демонстрационное меню,\nопрос заказов и операторский API" as Establishment
+
+User --> Web : Ищет меню, создаёт и отслеживает заказ
+Web --> Kitchen : Пользовательский API REST/JSON
+Kitchen --> DB : SQL-транзакции через pgx
+Operator --> Establishment : Обновляет меню и обрабатывает заказы
+Establishment --> Kitchen : Синхронизация меню по ключу Bearer,\nопрос по курсору и смена состояний
+
+legend right
+  |= Элемент |= Значение |
+  | Участник | Человек, работающий с системой |
+  | Внешняя система | Не входит в реализацию |
+  | Контейнер | Отдельный процесс или база данных |
+endlegend
+@enduml

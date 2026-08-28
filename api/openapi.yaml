@@ -1,0 +1,622 @@
+openapi: 3.0.3
+info:
+  title: API Avito.Кухни
+  version: 1.0.0
+  description: Пользовательский API и API интеграции заведений для MVP Avito.Кухни.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Состояние сервиса
+  - name: Пользователь
+  - name: Интеграция заведения
+paths:
+  /health/live:
+    get:
+      operationId: live
+      tags: [Состояние сервиса]
+      responses:
+        '200':
+          description: Процесс запущен.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      operationId: ready
+      tags: [Состояние сервиса]
+      responses:
+        '200':
+          description: Сервис готов принимать запросы.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/establishments:
+    get:
+      operationId: listEstablishments
+      tags: [Пользователь]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Активные заведения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstablishmentList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/establishments/{establishmentId}/menu:
+    get:
+      operationId: getMenu
+      tags: [Пользователь]
+      parameters:
+        - $ref: '#/components/parameters/EstablishmentId'
+      responses:
+        '200':
+          description: Активные позиции меню. Временно недоступные позиции остаются видимыми.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Menu'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      tags: [Пользователь]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            example:
+              user_id: platform-user-42
+              establishment_id: 11111111-1111-4111-8111-111111111111
+              delivery_address: Москва, Тверская улица, 1
+              items:
+                - menu_item_id: 22222222-2222-4222-8222-222222222222
+                  quantity: 2
+                  expected_price_minor: 129900
+      responses:
+        '201':
+          description: Заказ создан.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '200':
+          description: При повторной отправке возвращён ранее созданный заказ.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listOrders
+      tags: [Пользователь]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Заказы указанного пользователя основной платформы.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [Пользователь]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Снимок заказа и его текущее состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /integration/v1/menu:
+    put:
+      operationId: syncMenu
+      tags: [Интеграция заведения]
+      security:
+        - EstablishmentKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuSyncRequest'
+      responses:
+        '200':
+          description: Проекция меню заменена атомарно.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuSyncResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /integration/v1/orders:
+    get:
+      operationId: listIntegrationOrders
+      tags: [Интеграция заведения]
+      security:
+        - EstablishmentKey: []
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Заказы, изменённые после указанного непрозрачного курсора.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationOrderList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /integration/v1/orders/{orderId}/decision:
+    post:
+      operationId: decideOrder
+      tags: [Интеграция заведения]
+      security:
+        - EstablishmentKey: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderDecisionRequest'
+      responses:
+        '200':
+          description: Решение применено или безопасно повторено.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integration/v1/orders/{orderId}/status:
+    patch:
+      operationId: updateOrderStatus
+      tags: [Интеграция заведения]
+      security:
+        - EstablishmentKey: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusRequest'
+      responses:
+        '200':
+          description: Состояние применено или безопасно повторено.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    EstablishmentKey:
+      type: http
+      scheme: bearer
+      bearerFormat: непрозрачный ключ интеграции
+  parameters:
+    EstablishmentId:
+      name: establishmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: user_id
+      in: query
+      required: true
+      description: Непрозрачный идентификатор основной платформы Avito. В этом MVP он не является аутентификацией.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    BadRequest:
+      description: Запрос не прошёл проверку.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Ключ интеграции заведения отсутствует или недействителен.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Запрошенный ресурс не найден.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Текущее состояние предметной области не допускает операцию.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Непредвиденная внутренняя ошибка.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Необходимая зависимость недоступна.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    EstablishmentKind:
+      type: string
+      enum: [restaurant, cafe, store]
+    Establishment:
+      type: object
+      required: [id, name, kind, description]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/EstablishmentKind'
+        description:
+          type: string
+    EstablishmentList:
+      type: object
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Establishment'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        next_offset:
+          type: integer
+          nullable: true
+    MenuItem:
+      type: object
+      required: [id, external_id, name, description, price_minor, currency, available, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price_minor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          enum: [RUB]
+        available:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+    Menu:
+      type: object
+      required: [establishment, items]
+      properties:
+        establishment:
+          $ref: '#/components/schemas/Establishment'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItem'
+    CreateOrderRequest:
+      type: object
+      required: [user_id, establishment_id, delivery_address, items]
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        establishment_id:
+          type: string
+          format: uuid
+        delivery_address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CreateOrderItem'
+    CreateOrderItem:
+      type: object
+      required: [menu_item_id, quantity, expected_price_minor]
+      properties:
+        menu_item_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+        expected_price_minor:
+          type: integer
+          format: int64
+          minimum: 1
+    OrderStatus:
+      type: string
+      enum: [pending, accepted, preparing, ready, rejected]
+    OrderItem:
+      type: object
+      required: [menu_item_id, external_item_id, name, unit_price_minor, quantity, line_total_minor]
+      properties:
+        menu_item_id:
+          type: string
+          format: uuid
+        external_item_id:
+          type: string
+        name:
+          type: string
+        unit_price_minor:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+        line_total_minor:
+          type: integer
+          format: int64
+    Order:
+      type: object
+      required: [id, establishment_id, user_id, delivery_address, status, total_price_minor, currency, items, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        establishment_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        delivery_address:
+          type: string
+        external_order_id:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        rejection_reason:
+          type: string
+          nullable: true
+        total_price_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          enum: [RUB]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrderList:
+      type: object
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        next_offset:
+          type: integer
+          nullable: true
+    MenuSyncItem:
+      type: object
+      required: [external_id, name, description, price_minor, currency, available]
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+        price_minor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          enum: [RUB]
+        available:
+          type: boolean
+    MenuSyncRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/MenuSyncItem'
+    MenuSyncResult:
+      type: object
+      required: [active_items, deactivated_items, synced_at]
+      properties:
+        active_items:
+          type: integer
+        deactivated_items:
+          type: integer
+        synced_at:
+          type: string
+          format: date-time
+    IntegrationOrderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        next_cursor:
+          type: string
+          nullable: true
+    OrderDecisionRequest:
+      type: object
+      required: [decision, external_order_id]
+      properties:
+        decision:
+          type: string
+          enum: [accepted, rejected]
+        external_order_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    OrderStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [preparing, ready]
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          example: menu_item_unavailable
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        request_id:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'

@@ -1,0 +1,100 @@
+name: avito-kitchen
+
+services:
+  db:
+    image: postgres:18.6-alpine3.23
+    environment:
+      POSTGRES_DB: avito_kitchen
+      POSTGRES_USER: avito_kitchen
+      POSTGRES_PASSWORD: avito_kitchen
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avito_kitchen -d avito_kitchen"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.19.1
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://avito_kitchen:avito_kitchen@db:5432/avito_kitchen?sslmode=disable
+      - up
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    image: postgres:18.6-alpine3.23
+    environment:
+      PGPASSWORD: avito_kitchen
+    volumes:
+      - ./db/seed:/seed:ro
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - db
+      - -U
+      - avito_kitchen
+      - -d
+      - avito_kitchen
+      - -f
+      - /seed/demo.sql
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  kitchen-api:
+    build:
+      context: .
+      target: runtime
+    command: ["/app/kitchen-api"]
+    environment:
+      DATABASE_URL: postgres://avito_kitchen:avito_kitchen@db:5432/avito_kitchen?sslmode=disable
+      KITCHEN_HTTP_ADDR: :8080
+    ports:
+      - "${KITCHEN_PORT:-8080}:8080"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  example-establishment:
+    build:
+      context: .
+      target: runtime
+    command: ["/app/example-establishment"]
+    environment:
+      KITCHEN_API_URL: http://kitchen-api:8080
+      ESTABLISHMENT_INTEGRATION_KEY: demo-establishment-key
+      ESTABLISHMENT_HTTP_ADDR: :8081
+      ESTABLISHMENT_POLL_INTERVAL_MS: 500
+    ports:
+      - "${ESTABLISHMENT_PORT:-8081}:8081"
+    depends_on:
+      kitchen-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8081/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
